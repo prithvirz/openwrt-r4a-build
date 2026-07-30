@@ -73,7 +73,8 @@ jobs:
           echo "=== Patched eeprom.c (target_power lines) ==="
           grep -n "target_power" "$EEPROM"
           # Touch quilt stamp so build doesn't re-extract
-          touch $(find build_dir -path "*/mt76-*/.quilt_checked" 2>/dev/null || true)
+          STAMP=$(find build_dir -path "*/mt76-*/.quilt_checked" 2>/dev/null | head -1)
+          [ -n "$STAMP" ] && touch "$STAMP" || true
 
       - name: Copy UCI defaults
         run: |
