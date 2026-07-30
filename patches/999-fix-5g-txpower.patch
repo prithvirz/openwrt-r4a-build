@@ -31,3 +31,36 @@
  
  	t->delta_bw40 = mt76x02_rate_power_val(bw40);
  	t->delta_bw80 = mt76x02_rate_power_val(bw80);
+--- a/mt76x2/phy.c
++++ b/mt76x2/phy.c
+@@ -131,6 +131,12 @@ void mt76x2_phy_set_txpower(struct mt76x02_dev *dev)
+ 
+ 	mt76x2_get_power_info(dev, &txp, chan);
+ 
++	/* Force minimum target power for broken EEPROMs */
++	if (txp.target_power < 10)
++		txp.target_power = 23;
++	if (txp.chain[0].target_power < 10)
++		txp.chain[0].target_power = 23;
++	if (txp.chain[1].target_power < 10)
++		txp.chain[1].target_power = 23;
++
+ 	if (width == NL80211_CHAN_WIDTH_40)
+ 		delta = txp.delta_bw40;
+ 	else if (width == NL80211_CHAN_WIDTH_80)
+--- a/eeprom.c
++++ b/eeprom.c
+@@ -90,6 +90,15 @@ mt76_init_sband_channels(struct mt76_phy *phy, struct mt76_sband *msband,
+ 		chan->max_power = 0;
+ 		chan->max_reg_power = 0;
+ 	}
++
++	/* Fix for broken EEPROMs: ensure min 23 dBm per-channel power on 5G */
++	if (n_chan > 14) {
++		for (i = 0; i < n_chan; i++) {
++			chan = &channels[i];
++			if (chan->max_power < 20)
++				chan->max_power = 23;
++		}
++	}
+ }
