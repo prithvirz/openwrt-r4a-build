@@ -14,13 +14,20 @@
  	t->chain[chain].delta =
  		mt76x02_sign_extend_optional(data[delta_idx], 7);
  
-@@ -139,6 +143,9 @@ void mt76x2_get_power_info(struct mt76x02_dev *dev,
+@@ -139,6 +143,15 @@ void mt76x2_get_power_info(struct mt76x02_dev *dev,
  	if (mt76x2_tssi_enabled(dev) ||
  	    !mt76x02_field_valid(t->target_power))
  		t->target_power = t->chain[0].target_power;
-+	/* Fallback: ensure target_power is sane for 5 GHz */
++	/* Fallback: ensure target_power is sane */
 +	if (t->target_power == 0 || t->target_power == 0xff)
 +		t->target_power = 23;
++	/* Also fix per-chain if still zero */
++	if (t->chain[0].target_power == 0 ||
++	    t->chain[0].target_power == 0xff)
++		t->chain[0].target_power = 23;
++	if (t->chain[1].target_power == 0 ||
++	    t->chain[1].target_power == 0xff)
++		t->chain[1].target_power = 23;
  
  	t->delta_bw40 = mt76x02_rate_power_val(bw40);
  	t->delta_bw80 = mt76x02_rate_power_val(bw80);
