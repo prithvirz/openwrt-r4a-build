@@ -7,60 +7,44 @@
  	t->chain[chain].tssi_offset = data[1];
 -	t->chain[chain].target_power = data[2];
 +	t->chain[chain].target_power = data[2];
-+	/* Force 23 dBm if EEPROM returns 0 (broken on some MT76x2 chips) */
-+	if (t->chain[chain].target_power == 0 ||
-+	    t->chain[chain].target_power == 0xff)
-+		t->chain[chain].target_power = 23;
++	/* BYPASS: Force 20 dBm regardless of EEPROM */
++	if (t->chain[chain].target_power < 10)
++		t->chain[chain].target_power = 20;
  	t->chain[chain].delta =
  		mt76x02_sign_extend_optional(data[delta_idx], 7);
  
-@@ -139,6 +143,15 @@ void mt76x2_get_power_info(struct mt76x02_dev *dev,
+@@ -139,6 +143,12 @@ void mt76x2_get_power_info(struct mt76x02_dev *dev,
  	if (mt76x2_tssi_enabled(dev) ||
  	    !mt76x02_field_valid(t->target_power))
  		t->target_power = t->chain[0].target_power;
-+	/* Fallback: ensure target_power is sane */
-+	if (t->target_power == 0 || t->target_power == 0xff)
-+		t->target_power = 23;
-+	/* Also fix per-chain if still zero */
-+	if (t->chain[0].target_power == 0 ||
-+	    t->chain[0].target_power == 0xff)
-+		t->chain[0].target_power = 23;
-+	if (t->chain[1].target_power == 0 ||
-+	    t->chain[1].target_power == 0xff)
-+		t->chain[1].target_power = 23;
++	/* BYPASS: Force all power values to 20 dBm minimum */
++	if (t->target_power < 10)
++		t->target_power = 20;
++	if (t->chain[0].target_power < 10)
++		t->chain[0].target_power = 20;
++	if (t->chain[1].target_power < 10)
++		t->chain[1].target_power = 20;
  
  	t->delta_bw40 = mt76x02_rate_power_val(bw40);
  	t->delta_bw80 = mt76x02_rate_power_val(bw80);
 --- a/mt76x2/phy.c
 +++ b/mt76x2/phy.c
-@@ -131,6 +131,12 @@ void mt76x2_phy_set_txpower(struct mt76x02_dev *dev)
+@@ -131,6 +131,16 @@ void mt76x2_phy_set_txpower(struct mt76x02_dev *dev)
  
  	mt76x2_get_power_info(dev, &txp, chan);
  
-+	/* Force minimum target power for broken EEPROMs */
-+	if (txp.target_power < 10)
-+		txp.target_power = 23;
-+	if (txp.chain[0].target_power < 10)
-+		txp.chain[0].target_power = 23;
-+	if (txp.chain[1].target_power < 10)
-+		txp.chain[1].target_power = 23;
++	/* NUCLEAR BYPASS: Force TX power regardless of EEPROM.
++	 * This directly controls what gets written to MT_TX_ALC_CFG_0
++	 * hardware register. Ignores all EEPROM power calibration.
++	 * Using 20 dBm (same as stock Xiaomi firmware) for clean signal. */
++	txp.target_power = 20;
++	txp.chain[0].target_power = 20;
++	txp.chain[1].target_power = 20;
++	txp.chain[0].delta = 0;
++	txp.chain[1].delta = 0;
++	txp.delta_bw40 = 0;
++	txp.delta_bw80 = 0;
 +
  	if (width == NL80211_CHAN_WIDTH_40)
  		delta = txp.delta_bw40;
  	else if (width == NL80211_CHAN_WIDTH_80)
---- a/eeprom.c
-+++ b/eeprom.c
-@@ -90,6 +90,15 @@ mt76_init_sband_channels(struct mt76_phy *phy, struct mt76_sband *msband,
- 		chan->max_power = 0;
- 		chan->max_reg_power = 0;
- 	}
-+
-+	/* Fix for broken EEPROMs: ensure min 23 dBm per-channel power on 5G */
-+	if (n_chan > 14) {
-+		for (i = 0; i < n_chan; i++) {
-+			chan = &channels[i];
-+			if (chan->max_power < 20)
-+				chan->max_power = 23;
-+		}
-+	}
- }
