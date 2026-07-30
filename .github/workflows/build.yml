@@ -8,56 +8,85 @@ on:
 jobs:
   build:
     runs-on: ubuntu-24.04
+    timeout-minutes: 180
+
     steps:
       - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo apt-get clean
+          df -h
 
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential clang flex bison g++ gawk \
             gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev \
-            python3-setuptools rsync swig unzip zlib1g-dev file wget
+            python3-setuptools python3-dev rsync swig unzip zlib1g-dev file wget
 
       - name: Clone OpenWrt
         run: |
           git clone -b openwrt-24.10 --single-branch --depth 1 https://github.com/openwrt/openwrt.git
-          cd openwrt
-          echo "src-git-full packages https://git.openwrt.org/feed/packages.git;openwrt-24.10" > feeds.conf
-          echo "src-git-full luci https://git.openwrt.org/project/luci.git;openwrt-24.10" >> feeds.conf
 
-      - name: Apply mt76 TX power patch
+      - name: Update and install feeds
+        working-directory: openwrt
         run: |
-          mkdir -p openwrt/package/kernel/mt76/patches
-          cp patches/999-fix-5g-txpower.patch openwrt/package/kernel/mt76/patches/
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Configure
+        working-directory: openwrt
+        run: |
+          cat > .config << 'EOF'
+          CONFIG_TARGET_ramips=y
+          CONFIG_TARGET_ramips_mt7621=y
+          CONFIG_TARGET_ramips_mt7621_DEVICE_xiaomi_mi-router-4a-gigabit=y
+          CONFIG_PACKAGE_luci=y
+          CONFIG_PACKAGE_luci-ssl=y
+          CONFIG_PACKAGE_kmod-mt76x2=y
+          CONFIG_PACKAGE_sqm-scripts=y
+          CONFIG_PACKAGE_luci-app-sqm=y
+          EOF
+          make defconfig
+
+      - name: Download sources
+        working-directory: openwrt
+        run: |
+          make download -j8 || make download -j1 V=s
+
+      - name: Patch mt76 TX power
+        working-directory: openwrt
+        run: |
+          # Find the mt76x2/eeprom.c in the build tree after source prep
+          make package/kernel/mt76/prepare V=s
+          MT76_DIR=$(find build_dir -path "*/mt76-*/mt76x2/eeprom.c" | head -1 | xargs dirname)
+          EEPROM="$MT76_DIR/eeprom.c"
+          echo "Patching: $EEPROM"
+          # After: t->chain[chain].target_power = data[2];
+          # Insert: if (t->chain[chain].target_power == 0 || t->chain[chain].target_power == 0xff) t->chain[chain].target_power = 23;
+          sed -i '/t->chain\[chain\]\.target_power = data\[2\];/a\\t/* Force 23 dBm when EEPROM returns 0 (MT76x2 5G fix) */\n\tif (t->chain[chain].target_power == 0 || t->chain[chain].target_power == 0xff)\n\t\tt->chain[chain].target_power = 23;' "$EEPROM"
+          # After: t->target_power = t->chain[0].target_power;
+          # Insert fallback
+          sed -i '/t->target_power = t->chain\[0\]\.target_power;/a\\t/* Fallback: ensure target_power is sane */\n\tif (t->target_power == 0 || t->target_power == 0xff)\n\t\tt->target_power = 23;' "$EEPROM"
+          echo "=== Patched eeprom.c (target_power lines) ==="
+          grep -n "target_power" "$EEPROM"
+          # Touch quilt stamp so build doesn't re-extract
+          touch $(find build_dir -path "*/mt76-*/.quilt_checked" 2>/dev/null || true)
 
       - name: Copy UCI defaults
         run: |
           mkdir -p openwrt/files/etc/uci-defaults
           cp files/etc/uci-defaults/99-custom openwrt/files/etc/uci-defaults/
 
-      - name: Update and install feeds
-        run: |
-          cd openwrt
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
-
-      - name: Configure
-        run: |
-          cp .config openwrt/.config
-          cd openwrt
-          make defconfig
-
-      - name: Download sources
-        run: |
-          cd openwrt
-          make download -j8 V=s
-
       - name: Build
+        working-directory: openwrt
         run: |
-          cd openwrt
-          make -j$(nproc) V=s
+          make -j$(nproc) V=s 2>&1 | tail -200 || make -j1 V=s 2>&1 | tail -200
 
       - name: Upload firmware
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: openwrt-xiaomi-r4a-gigabit
