@@ -1,32 +1,44 @@
 #!/bin/sh
 
-# WiFi 2.4 GHz
+# WiFi 2.4 GHz (radio0 - MT7603E)
 uci set wireless.radio0.disabled='0'
-uci set wireless.radio0.country='IN'
-uci set wireless.radio0.channel='auto'
+uci set wireless.radio0.country='US'
+uci set wireless.radio0.channel='6'
+uci set wireless.radio0.htmode='HT20'
+uci set wireless.radio0.txpower='24'
+uci set wireless.radio0.noscan='1'
+uci set wireless.radio0.beacon_int='50'
+uci set wireless.radio0.dtim_period='1'
 uci set wireless.radio0.disassoc_low_ack='0'
 uci set wireless.default_radio0.ssid='ApunkaWIFI'
 uci set wireless.default_radio0.encryption='psk2'
 uci set wireless.default_radio0.key='APEXPRIT'
+uci set wireless.default_radio0.mcast_rate='24000'
 uci set wireless.default_radio0.ieee80211r='1'
 uci set wireless.default_radio0.ft_over_ds='1'
 uci set wireless.default_radio0.ft_psk_generate_local='1'
 
-# WiFi 5 GHz
+# WiFi 5 GHz (radio1 - MT7612E)
 uci set wireless.radio1.disabled='0'
-uci set wireless.radio1.country='IN'
-uci set wireless.radio1.channel='auto'
+uci set wireless.radio1.country='US'
+uci set wireless.radio1.channel='36'
+uci set wireless.radio1.htmode='VHT80'
+uci set wireless.radio1.txpower='23'
+uci set wireless.radio1.noscan='1'
+uci set wireless.radio1.beacon_int='50'
+uci set wireless.radio1.dtim_period='1'
 uci set wireless.radio1.disassoc_low_ack='0'
 uci set wireless.default_radio1.ssid='ApunkaWIFI_5G'
 uci set wireless.default_radio1.encryption='psk2'
-uci set wireless.default_radio1.key='APEXPRIT'
+uci set wireless.default_radio1.key='APUNKAWIFI5G'
+uci set wireless.default_radio1.mcast_rate='24000'
 uci set wireless.default_radio1.ieee80211r='1'
 uci set wireless.default_radio1.ft_over_ds='1'
 uci set wireless.default_radio1.ft_psk_generate_local='1'
 
 uci commit wireless
 
-# WAN static
+# WAN & Network
 uci set network.wan.proto='static'
 uci set network.wan.ipaddr='10.21.152.215'
 uci set network.wan.netmask='255.255.255.192'
@@ -39,9 +51,25 @@ uci commit network
 # Admin password
 echo -e 'apexprit\napexprit' | passwd root
 
-# DNS
-uci set dhcp.@dnsmasq[0].server='1.1.1.1' '8.8.8.8' '103.211.23.130'
+# DNS & DHCP
+uci set dhcp.@dnsmasq[0].server='1.1.1.1' '1.0.0.1' '8.8.8.8'
+uci set dhcp.@dnsmasq[0].filter_aaaa='1'
+uci set dhcp.@dnsmasq[0].noresolv='1'
+uci set dhcp.@dnsmasq[0].allservers='1'
+
+# Static Leases
+uci add dhcp host
+uci set dhcp.@host[-1].name='PRIT-Laptop'
+uci set dhcp.@host[-1].mac='50:eb:f6:d4:ae:18'
+uci set dhcp.@host[-1].ip='192.168.1.10'
+
+uci add dhcp host
+uci set dhcp.@host[-1].name='Nord4'
+uci set dhcp.@host[-1].mac='22:77:8f:87:6c:16'
+uci set dhcp.@host[-1].ip='192.168.1.11'
+
 uci commit dhcp
 
 exit 0
+
 
