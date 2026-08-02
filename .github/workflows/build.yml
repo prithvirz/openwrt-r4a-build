@@ -30,6 +30,14 @@ jobs:
         run: |
           git clone -b openwrt-24.10 --single-branch --depth 1 https://github.com/openwrt/openwrt.git
 
+      - name: Cache download directory
+        uses: actions/cache@v4
+        with:
+          path: openwrt/dl
+          key: openwrt-dl-${{ runner.os }}-${{ hashFiles('.config') }}
+          restore-keys: |
+            openwrt-dl-${{ runner.os }}-
+
       - name: Update and install feeds
         working-directory: openwrt
         run: |
@@ -39,16 +47,7 @@ jobs:
       - name: Configure
         working-directory: openwrt
         run: |
-          cat > .config << 'EOF'
-          CONFIG_TARGET_ramips=y
-          CONFIG_TARGET_ramips_mt7621=y
-          CONFIG_TARGET_ramips_mt7621_DEVICE_xiaomi_mi-router-4a-gigabit=y
-          CONFIG_PACKAGE_luci=y
-          CONFIG_PACKAGE_luci-ssl=y
-          CONFIG_PACKAGE_kmod-mt76x2=y
-          CONFIG_PACKAGE_sqm-scripts=y
-          CONFIG_PACKAGE_luci-app-sqm=y
-          EOF
+          cp ../.config .config
           make defconfig
 
       - name: Download sources
@@ -59,22 +58,9 @@ jobs:
       - name: Patch mt76 TX power
         working-directory: openwrt
         run: |
-          # Find the mt76x2/eeprom.c in the build tree after source prep
-          make package/kernel/mt76/prepare V=s
-          MT76_DIR=$(find build_dir -path "*/mt76-*/mt76x2/eeprom.c" | head -1 | xargs dirname)
-          EEPROM="$MT76_DIR/eeprom.c"
-          echo "Patching: $EEPROM"
-          # After: t->chain[chain].target_power = data[2];
-          # Insert: if (t->chain[chain].target_power == 0 || t->chain[chain].target_power == 0xff) t->chain[chain].target_power = 23;
-          sed -i '/t->chain\[chain\]\.target_power = data\[2\];/a\\t/* Force 23 dBm when EEPROM returns 0 (MT76x2 5G fix) */\n\tif (t->chain[chain].target_power == 0 || t->chain[chain].target_power == 0xff)\n\t\tt->chain[chain].target_power = 23;' "$EEPROM"
-          # After: t->target_power = t->chain[0].target_power;
-          # Insert fallback
-          sed -i '/t->target_power = t->chain\[0\]\.target_power;/a\\t/* Fallback: ensure target_power is sane */\n\tif (t->target_power == 0 || t->target_power == 0xff)\n\t\tt->target_power = 23;' "$EEPROM"
-          echo "=== Patched eeprom.c (target_power lines) ==="
-          grep -n "target_power" "$EEPROM"
-          # Touch quilt stamp so build doesn't re-extract
-          STAMP=$(find build_dir -path "*/mt76-*/.quilt_checked" 2>/dev/null | head -1)
-          [ -n "$STAMP" ] && touch "$STAMP" || true
+          mkdir -p package/kernel/mt76/patches
+          cp ../patches/999-fix-5g-txpower.patch package/kernel/mt76/patches/
+          echo "Copied 999-fix-5g-txpower.patch to package/kernel/mt76/patches/"
 
       - name: Copy UCI defaults
         run: |
@@ -94,3 +80,4 @@ jobs:
           path: |
             openwrt/bin/targets/ramips/mt7621/*xiaomi_mi-router-4a-gigabit*
           retention-days: 30
+
