@@ -5,6 +5,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-24.04
@@ -62,17 +65,17 @@ jobs:
           cp ../patches/999-fix-5g-txpower.patch package/kernel/mt76/patches/
           echo "Copied 999-fix-5g-txpower.patch to package/kernel/mt76/patches/"
 
-      - name: Copy UCI defaults
+      - name: Copy custom files
         run: |
-          mkdir -p openwrt/files/etc/uci-defaults
-          cp files/etc/uci-defaults/99-custom openwrt/files/etc/uci-defaults/
+          mkdir -p openwrt/files
+          cp -r files/* openwrt/files/
 
       - name: Build
         working-directory: openwrt
         run: |
           make -j$(nproc) V=s 2>&1 | tail -200 || make -j1 V=s 2>&1 | tail -200
 
-      - name: Upload firmware
+      - name: Upload firmware artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -80,4 +83,23 @@ jobs:
           path: |
             openwrt/bin/targets/ramips/mt7621/*xiaomi_mi-router-4a-gigabit*
           retention-days: 30
+
+      - name: Publish GitHub Release
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: release-${{ github.sha }}
+          name: "OpenWrt 24.10 Xiaomi R4A Gigabit (${{ github.sha }})"
+          body: |
+            Automated OpenWrt 24.10 Build for Xiaomi Mi Router 4A Gigabit.
+            - MT7621 PPE Hardware NAT enabled
+            - 5GHz MT76x2 20dBm/23dBm TX Power Fix
+            - 802.11k/v/r Fast Roam + Airtime Fairness
+            - TCP BBR & Packet Steering
+          files: |
+            openwrt/bin/targets/ramips/mt7621/*sysupgrade.bin
+            openwrt/bin/targets/ramips/mt7621/*.manifest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 
