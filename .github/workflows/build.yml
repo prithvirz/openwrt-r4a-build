@@ -16,6 +16,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Validate driver patch syntax
+        run: git apply --numstat patches/999-fix-5g-txpower.patch
+
       - name: Free disk space
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
@@ -73,15 +76,18 @@ jobs:
       - name: Build
         working-directory: openwrt
         run: |
+          set -o pipefail
           make -j$(nproc) V=s 2>&1 | tail -200 || make -j1 V=s 2>&1 | tail -200
+          image=(bin/targets/ramips/mt7621/*xiaomi_mi-router-4a-gigabit-squashfs-sysupgrade.bin)
+          test "${#image[@]}" -eq 1 && test -s "${image[0]}"
 
       - name: Upload firmware artifact
-        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: openwrt-xiaomi-r4a-gigabit
           path: |
             openwrt/bin/targets/ramips/mt7621/*xiaomi_mi-router-4a-gigabit*
+          if-no-files-found: error
           retention-days: 30
 
       - name: Publish GitHub Release
@@ -96,8 +102,9 @@ jobs:
             - 5GHz MT76x2 20dBm/23dBm TX Power Fix
             - 802.11k/v/r Fast Roam + Airtime Fairness
             - TCP BBR & Packet Steering
+          fail_on_unmatched_files: true
           files: |
-            openwrt/bin/targets/ramips/mt7621/*sysupgrade.bin
+            openwrt/bin/targets/ramips/mt7621/*xiaomi_mi-router-4a-gigabit-squashfs-sysupgrade.bin
             openwrt/bin/targets/ramips/mt7621/*.manifest
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
